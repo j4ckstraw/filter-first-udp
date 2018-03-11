@@ -93,13 +93,14 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
 		int (*okfn)(struct sk_buff *))
 {
         ip = ip_hdr(skb); //获取数据包的ip首部
-	node = hash_get(hashMap,ip->saddr % HASH_MAP_SIZE);
+	// node = hash_get(hashMap,ip->saddr % HASH_MAP_SIZE);
+	node = (num > 10);
 	if(!node)
 	{
 		printk("first meet: %d\n",(node->val));
-		hash_set(hashMap, ip->saddr % HASH_MAP_SIZE, ip->saddr);
-		// hash_set(hashMap, num, ip->saddr);
-		num = (num+1)%HASH_MAP_SIZE;
+		// hash_set(hashMap, ip->saddr % HASH_MAP_SIZE, ip->saddr);
+		// num = (num+1)%HASH_MAP_SIZE;
+		num = (num+1)%20;
 		return NF_DROP;
 	}
 	else
@@ -116,7 +117,7 @@ static int __init hook_init(void)
 	nfho.pf = PF_INET;//ipv4，所以用这个
 	nfho.priority = NF_IP_PRI_FIRST;//优先级，第一顺位
 
-	hashMap = hash_create(HASH_MAP_SIZE);
+	// hashMap = hash_create(HASH_MAP_SIZE);
         printk("Create hashMap, size %d\n",HASH_MAP_SIZE);
 	
 	nf_register_hook(&nfho);//注册
@@ -125,7 +126,7 @@ static int __init hook_init(void)
 }
 static void __exit hook_exit(void)
 {
-	hash_destroy(hashMap);
+	// hash_destroy(hashMap);
 	printk("Destroy hashMap\n");
 	nf_unregister_hook(&nfho);//注销
 }
