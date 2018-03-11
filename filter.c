@@ -4,7 +4,8 @@
 #include <linux/netdevice.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv4.h>
-#include <linux/ip.h>//for ip header
+#include <linux/ip.h> //for ip header
+#include <linux/slab.h>  // for kmalloc/kfree
 
 #define HASH_MAP_SIZE 760000
 
@@ -21,31 +22,33 @@ typedef struct HashMap {
     HashNode** storage;
 } HashMap;
 
-HashMap* hash_create(int size);
+HashMap* hash_create(unsigned int size);
 void hash_destroy(HashMap* hashMap);
-void hash_set(HashMap* hashMap, int key, int value);
-HashNode* hash_get(HashMap* hashMap, int key);
+void hash_set(HashMap* hashMap, unsigned int key, unsigned int value);
+HashNode* hash_get(HashMap* hashMap, unsigned int key);
 
-HashMap* hash_create(int size){
-    HashMap* hashMap = malloc(sizeof(HashMap));
+HashMap* hash_create(unsigned int size){
+    HashMap* hashMap = kmalloc(sizeof(HashMap),GFP_KERNEL);
     hashMap->size = size;
-    hashMap->storage = calloc(size, sizeof(HashNode*));
+    // hashMap->storage = calloc(size, sizeof(HashNode*));
+    hashMap->storage = kmalloc(size*sizeof(HashNode*),GFP_KERNEL);
     return hashMap;
 }
 
 void hash_destroy(HashMap* hashMap) {
-    for(int i=0; i < hashMap->size; i++) {
+    unsigned int i = 0;
+    for(i=0; i < hashMap->size; i++) {
         HashNode *node;
         if((node = hashMap->storage[i])) {
-            free(node);
+            kfree(node);
         }
     }
-    free(hashMap->storage);
-    free(hashMap);
+    kfree(hashMap->storage);
+    kfree(hashMap);
 }
 
-void hash_set(HashMap *hashMap, int key, int value) {
-    int hash = abs(key) % hashMap->size;
+void hash_set(HashMap *hashMap, unsigned int key, unsigned int value) {
+    unsigned int hash = abs(key) % hashMap->size;
     HashNode* node;
     while ((node = hashMap->storage[hash])) {
         if (hash < hashMap->size - 1) {
@@ -54,14 +57,14 @@ void hash_set(HashMap *hashMap, int key, int value) {
             hash = 0;
         }
     }
-    node = malloc(sizeof(HashNode));
+    node = kmalloc(sizeof(HashNode),GFP_KERNEL);
     node->key = key;
     node->val = value;
     hashMap->storage[hash] = node;
 }
 
-HashNode* hash_get(HashMap *hashMap, int key) {
-    int hash = abs(key) % hashMap->size;
+HashNode* hash_get(HashMap *hashMap, unsigned int key) {
+    unsigned int hash = abs(key) % hashMap->size;
     HashNode* node;
     while ((node = hashMap->storage[hash])) {
         if (node->key == key) {
@@ -91,14 +94,14 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
         static unsigned int num = 0;
         hashMap = hash_create(HASH_MAP_SIZE);
         printk("Create hashMap, size %d\n",HASH_MAP_SIZE);
-
-	struct iphdr *ip = ip_hdr(skb);//获取数据包的ip首部
-	
-	node = hash_get(hashMap,ip->saddr);
+	struct iphdr *ip = ip_hdr(skb); //获取数据包的ip首部
+	node = hash_get(hashMap,ip->saddr % HASH_MAP_SIZE);
 	if(!node)
 	{
 		printk("first meet: %d\n",(node->val));
-		hash_set(hashMap, ip->saddr, ip->saddr);
+		hash_set(hashMap, ip->saddr % HASH_MAP_SIZE, ip->saddr);
+		// hash_set(hashMap, num, ip->saddr);
+		num = (num+1)%HASH_MAP_SIZE;
 		return NF_DROP;
 	}
 	else
