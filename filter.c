@@ -6,7 +6,28 @@
 #include <linux/netfilter_ipv4.h>
 #include <linux/ip.h>//for ip header
 
+#define INT_BITS sizeof(int)
+#define SHIFT 5 // 2^5=32
+#define MASK 0x1f // 2^5=32
+#define MAX 1024 //max number
+ 
+static int bitmap[MAX / INT_BITS];
+void set(unsigned int i){
+    i = i%((MAX/INT_BITS)<<SHIFT);
+    bitmap[i >> SHIFT] |= 1 << (i & MASK);
+}
+bool test(unsigned int i){
+    i = i%((MAX/INT_BITS)<<SHIFT);
+    return bitmap[i >> SHIFT] & (1 << (i & MASK));
+}
+
+void clear(unsigned int i){
+    i = i%((MAX/INT_BITS)<<SHIFT);
+    bitmap[i >> SHIFT] & ~(1 << (i & MASK));
+}
+
 MODULE_LICENSE("Dual BSD/GPL");
+MODULE_AUTHOR("muto");
 
 static struct nf_hook_ops nfho;
 
@@ -21,22 +42,28 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
         int (*okfn)(struct sk_buff *))
 {
     struct iphdr *ip = ip_hdr(skb);//获取数据包的ip首部
-    if(ip->protocol == 17 && ip->saddr == *(unsigned int *)drop_if)//ip首部中的源端ip地址比对  udp protocol
+    // if(ip->protocol == 17 && ip->saddr == *(unsigned int *)drop_if)//ip首部中的源端ip地址比对  udp protocol
+    if(ip->protocol == 17 && !test(ip->saddr)) //ip首部中的源端ip地址比对  udp protocol
     {
-        //打印网址
-        printk("Dropped packet from %d.%d.%d.%d\n",*drop_if,
+        drop_if=(unsigned char*)ip->saddr;
+        set(ip->saddr);
+        printk("first meet: %d.%d.%d.%d\n",*drop_if,
                 *(drop_if+1), *(drop_if+2),*(drop_if+3));
         return NF_DROP;
     }
-    else
+    else if(ip->protocol == 17 && test(ip->saddr))
     {
         //打印网址，这里把长整型转换成点十格式
         unsigned char *p = (unsigned char *)&(ip->saddr);
-        // printk("Allowed packet from %d.%d.%d.%d\n",p[0]&0xff,
-        //        p[1]&0xff, p[2]&0xff, p[3]&0xff);
+        printk("second meet: %d.%d.%d.%d\n",p[0]&0xff,
+                p[1]&0xff, p[2]&0xff, p[3]&0xff);
+        return NF_ACCEPT;
+    }
+    else {
         return NF_ACCEPT;
     }
 }
+
 
 static int __init hook_init(void)
 {
@@ -44,7 +71,7 @@ static int __init hook_init(void)
     nfho.hooknum = NF_INET_PRE_ROUTING;//ipv4的第一个hook
     nfho.pf = PF_INET;//ipv4，所以用这个
     nfho.priority = NF_IP_PRI_FIRST;//优先级，第一顺位
-
+    printk("Filter module installed.\n")
     nf_register_hook(&nfho);//注册
 
     return 0;
