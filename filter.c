@@ -6,13 +6,79 @@
 #include <linux/netfilter_ipv4.h>
 #include <linux/ip.h>//for ip header
 
+#define HASH_MAP_SIZE 760000
+
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_AUTHOR("muto");
 
-static struct nf_hook_ops nfho;
+typedef struct HashNode {
+    unsigned int key;
+    unsigned int val;
+} HashNode;
 
-// static unsigned char *drop_if = "\xc6\xdb\xcc\x6f";//ip address big endian
-static unsigned char *drop_if = "\x6f\xcc\xdb\xc6";//ip address big endian
+typedef struct HashMap {
+    unsigned int size;
+    HashNode** storage;
+} HashMap;
+
+HashMap* hash_create(int size);
+void hash_destroy(HashMap* hashMap);
+void hash_set(HashMap* hashMap, int key, int value);
+HashNode* hash_get(HashMap* hashMap, int key);
+
+HashMap* hash_create(int size){
+    HashMap* hashMap = malloc(sizeof(HashMap));
+    hashMap->size = size;
+    hashMap->storage = calloc(size, sizeof(HashNode*));
+    return hashMap;
+}
+
+void hash_destroy(HashMap* hashMap) {
+    for(int i=0; i < hashMap->size; i++) {
+        HashNode *node;
+        if((node = hashMap->storage[i])) {
+            free(node);
+        }
+    }
+    free(hashMap->storage);
+    free(hashMap);
+}
+
+void hash_set(HashMap *hashMap, int key, int value) {
+    int hash = abs(key) % hashMap->size;
+    HashNode* node;
+    while ((node = hashMap->storage[hash])) {
+        if (hash < hashMap->size - 1) {
+            hash++;
+        } else {
+            hash = 0;
+        }
+    }
+    node = malloc(sizeof(HashNode));
+    node->key = key;
+    node->val = value;
+    hashMap->storage[hash] = node;
+}
+
+HashNode* hash_get(HashMap *hashMap, int key) {
+    int hash = abs(key) % hashMap->size;
+    HashNode* node;
+    while ((node = hashMap->storage[hash])) {
+        if (node->key == key) {
+            return node;
+        }
+        if (hash < hashMap->size - 1) {
+            hash++;
+        } else {
+            hash = 0;
+        }
+    }
+    return NULL;
+}
+
+static struct nf_hook_ops nfho;
+// static unsigned char *drop_if = "\x6f\xcc\xdb\xc6";//ip address big endian
+static HashMap* hashMap;
 
 //钩子函数，注意参数格式与开发环境源码树保持一致
 unsigned int hook_func(const struct nf_hook_ops *ops, 
@@ -21,23 +87,22 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
 		const struct net_device *out,
 		int (*okfn)(struct sk_buff *))
 {
+        HashNode* node;
+        static unsigned int num = 0;
+        hashMap = hash_create(HASH_MAP_SIZE);
+        printk("Create hashMap, size %d\n",HASH_MAP_SIZE);
+
 	struct iphdr *ip = ip_hdr(skb);//获取数据包的ip首部
-	if(ip->saddr == *(unsigned int *)drop_if)//ip首部中的源端ip地址比对
+	
+	node = hash_get(hashMap,ip->saddr);
+	if(!node)
 	{
-		//打印网址
-		printk("Dropped packet from %d.%d.%d.%d\n",*drop_if,
-				*(drop_if+1), *(drop_if+2),*(drop_if+3));
+		printk("first meet: %d\n",(node->val));
+		hash_set(hashMap, ip->saddr, ip->saddr);
 		return NF_DROP;
 	}
 	else
 	{
-		//打印网址，这里把长整型转换成点十格式
-		unsigned char *p = (unsigned char *)drop_if;
-		printk("drop_if is: %d.%d.%d.%d\n",p[0]&0xff,
-				p[1]&0xff, p[2]&0xff, p[3]&0xff);
-		p = (unsigned char *)&(ip->saddr);
-		printk("Allowed packet from %d.%d.%d.%d\n",p[0]&0xff,
-				p[1]&0xff, p[2]&0xff, p[3]&0xff);
 		return NF_ACCEPT;
 	}
 }
@@ -55,6 +120,8 @@ static int __init hook_init(void)
 }
 static void __exit hook_exit(void)
 {
+	hash_destroy(hashMap);
+	printk("Destroy hashMap\n");
 	nf_unregister_hook(&nfho);//注销
 }
 
