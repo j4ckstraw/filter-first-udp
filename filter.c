@@ -10,20 +10,17 @@
 #define SHIFT 5 // 2^5=32
 #define MASK 0x1f // 2^5=32
 #define MAX 1024 //max number
- 
-static int bitmap[MAX / INT_BITS];
+#define SIZE (MAX/INT_BITS) 
+static int bitmap[SIZE];
 void set(unsigned int i){
-    i = i%((MAX/INT_BITS)<<SHIFT);
-    bitmap[i >> SHIFT] |= 1 << (i & MASK);
+    bitmap[(i >> SHIFT)%SIZE] |= 1 << (i & MASK);
 }
 bool test(unsigned int i){
-    i = i%((MAX/INT_BITS)<<SHIFT);
-    return bitmap[i >> SHIFT] & (1 << (i & MASK));
+    return bitmap[(i >> SHIFT)%SIZE] & (1 << (i & MASK));
 }
 
 void clear(unsigned int i){
-    i = i%((MAX/INT_BITS)<<SHIFT);
-    bitmap[i >> SHIFT] & ~(1 << (i & MASK));
+    bitmap[(i >> SHIFT)%SIZE] & ~(1 << (i & MASK));
 }
 
 MODULE_LICENSE("Dual BSD/GPL");
@@ -45,18 +42,20 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
     // if(ip->protocol == 17 && ip->saddr == *(unsigned int *)drop_if)//ip首部中的源端ip地址比对  udp protocol
     if(ip->protocol == 17 && !test(ip->saddr)) //ip首部中的源端ip地址比对  udp protocol
     {
-        drop_if=(unsigned char*)ip->saddr;
+        // drop_if=(unsigned char*)ip->saddr;
+        printk("first meet ip saddr: %d\n",ip->saddr)	;
         set(ip->saddr);
-        printk("first meet: %d.%d.%d.%d\n",*drop_if,
-                *(drop_if+1), *(drop_if+2),*(drop_if+3));
+        // printk("first meet: %d.%d.%d.%d\n",*drop_if,
+        //         *(drop_if+1), *(drop_if+2),*(drop_if+3));
         return NF_DROP;
     }
     else if(ip->protocol == 17 && test(ip->saddr))
     {
         //打印网址，这里把长整型转换成点十格式
-        unsigned char *p = (unsigned char *)&(ip->saddr);
-        printk("second meet: %d.%d.%d.%d\n",p[0]&0xff,
-                p[1]&0xff, p[2]&0xff, p[3]&0xff);
+        // unsigned char *p = (unsigned char *)&(ip->saddr);
+        // printk("second meet: %d.%d.%d.%d\n",p[0]&0xff,
+        //         p[1]&0xff, p[2]&0xff, p[3]&0xff);
+        printk("meet ip saddr: %d again\n",ip->saddr);
         return NF_ACCEPT;
     }
     else {
@@ -71,7 +70,7 @@ static int __init hook_init(void)
     nfho.hooknum = NF_INET_PRE_ROUTING;//ipv4的第一个hook
     nfho.pf = PF_INET;//ipv4，所以用这个
     nfho.priority = NF_IP_PRI_FIRST;//优先级，第一顺位
-    printk("Filter module installed.\n")
+    printk("Filter module installed.\n");
     nf_register_hook(&nfho);//注册
 
     return 0;
@@ -79,6 +78,7 @@ static int __init hook_init(void)
 static void __exit hook_exit(void)
 {
     nf_unregister_hook(&nfho);//注销
+    printk("Filter module uninstalled.\n");
 }
 
 module_init(hook_init);
