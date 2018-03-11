@@ -82,7 +82,9 @@ HashNode* hash_get(HashMap *hashMap, unsigned int key) {
 static struct nf_hook_ops nfho;
 // static unsigned char *drop_if = "\x6f\xcc\xdb\xc6";//ip address big endian
 static HashMap* hashMap;
-
+static HashNode* node;
+static unsigned int num = 0;
+struct iphdr *ip = NULL;
 //钩子函数，注意参数格式与开发环境源码树保持一致
 unsigned int hook_func(const struct nf_hook_ops *ops, 
 		struct sk_buff *skb,
@@ -90,11 +92,7 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
 		const struct net_device *out,
 		int (*okfn)(struct sk_buff *))
 {
-        HashNode* node;
-        static unsigned int num = 0;
-        hashMap = hash_create(HASH_MAP_SIZE);
-        printk("Create hashMap, size %d\n",HASH_MAP_SIZE);
-	struct iphdr *ip = ip_hdr(skb); //获取数据包的ip首部
+        ip = ip_hdr(skb); //获取数据包的ip首部
 	node = hash_get(hashMap,ip->saddr % HASH_MAP_SIZE);
 	if(!node)
 	{
@@ -106,6 +104,7 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
 	}
 	else
 	{
+		printk("\e[31m second meet: %d\n \e[m\n",(node->val));
 		return NF_ACCEPT;
 	}
 }
@@ -117,6 +116,9 @@ static int __init hook_init(void)
 	nfho.pf = PF_INET;//ipv4，所以用这个
 	nfho.priority = NF_IP_PRI_FIRST;//优先级，第一顺位
 
+	hashMap = hash_create(HASH_MAP_SIZE);
+        printk("Create hashMap, size %d\n",HASH_MAP_SIZE);
+	
 	nf_register_hook(&nfho);//注册
 
 	return 0;
